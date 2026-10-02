@@ -14,7 +14,7 @@ from core.authentication import get_anonymous_id
 from rest_framework.decorators import api_view
 from rest_framework import status
 
-from .models import Challenge, ChallengeAsset
+from .models import Challenge, ChallengeAsset, ChallengeSubmission
 from . import serializers
 from core.storage.utils import upload_a_file, delete_file
 
@@ -415,3 +415,194 @@ def challenge_asset_detail(request, challenge_slug, asset_slug):
             status_code=status.HTTP_200_OK,
         )
 
+@api_view(["GET", "POST"])
+def challenge_submissions(request, challenge_slug):
+    try:
+        challenge_obj = Challenge.objects.get(
+            slug=challenge_slug
+        )
+    except Challenge.DoesNotExist:
+        return response(
+            message="Challenge not found.",
+            success=False,
+            code='not-found',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    owner_id = get_anonymous_id(request)
+
+    is_challenge_owner = challenge_obj.owner_id == owner_id
+
+    if request.method == "GET":
+
+        if is_challenge_owner:
+            submissions = challenge_obj.submissions.all()
+
+        else:
+            submissions = challenge_obj.submissions.filter(
+                Q(owner_id=owner_id) |
+                Q(is_public=True)
+            )
+
+        submissions = submissions.order_by("-created_at")
+
+        return response(
+            message="Challenge submissions fetched successfully.",
+            content={
+                "submissions": serializers.ChallengeSubmissionSerializer(
+                    submissions,
+                    many=True,
+                ).data,
+            },
+            success=True,
+            status_code=status.HTTP_200_OK,
+        )
+
+    if request.method == "POST":
+        serializer = serializers.CreateChallengeSubmissionSerializer(
+            data=request.data
+        )
+
+        if not serializer.is_valid():
+            return response(
+                message="Invalid submission data.",
+                error=serializer.errors,
+                success=False,
+                code='invalid-data',
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Editorial submission is only allowed for challenge owner.
+        is_editorial = is_challenge_owner
+
+        try:
+            submission_obj = serializer.save(
+                challenge=challenge_obj,
+                owner_id=owner_id,
+                is_editorial=is_editorial,
+                is_public=False,
+            )
+        except DatabaseError as exc:
+            return db_error_response(exc, "create the submission")
+
+        return response(
+            message="Submission created successfully.",
+            content=serializers.ChallengeSubmissionSerializer(
+                submission_obj
+            ).data,
+            success=True,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+@api_view(["GET", "PATCH", "DELETE"])
+def challenge_submission_detail(request, challenge_slug, submission_slug):
+    try:
+        challenge_obj = Challenge.objects.get(
+            slug=challenge_slug
+        )
+    except Challenge.DoesNotExist:
+        return response(
+            message="Challenge not found.",
+            success=False,
+            code='not-found',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    try:
+        submission_obj = challenge_obj.submissions.get(
+            slug=submission_slug
+        )
+    except ChallengeSubmission.DoesNotExist:
+        return response(
+            message="Submission not found.",
+            success=False,
+            code='not-found',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    owner_id = get_anonymous_id(request)
+
+    is_challenge_owner = challenge_obj.owner_id == owner_id
+    is_submission_owner = submission_obj.owner_id == owner_id
+
+
+    if request.method == "GET":
+
+        can_view = (
+            is_challenge_owner
+            or is_submission_owner
+            or submission_obj.is_public
+        )
+
+        if not can_view:
+            return response(
+                message="You do not have permission to view this submission.",
+                success=False,
+                code='forbidden',
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        return response(
+            message="Submission fetched successfully.",
+            content=serializers.ChallengeSubmissionSerializer(
+                submission_obj
+            ).data,
+            success=True,
+            status_code=status.HTTP_200_OK,
+        )
+
+    if not is_submission_owner:
+        return response(
+            message="You are not the owner of this submission.",
+            success=False,
+            code='forbidden',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    if request.method == "PATCH":
+        serializer = serializers.UpdateChallengeSubmissionSerializer(
+            submission_obj,
+            data=request.data,
+            partial=True,
+        )
+
+        if not serializer.is_valid():
+            return response(
+                message="Invalid submission data.",
+                error=serializer.errors,
+                success=False,
+                code='invalid-data',
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            submission_obj = serializer.save()
+        except DatabaseError as exc:
+            return db_error_response(exc, "update the submission")
+
+        return response(
+            message="Submission updated successfully.",
+            content=serializers.ChallengeSubmissionSerializer(
+                submission_obj
+            ).data,
+            success=True,
+            status_code=status.HTTP_200_OK,
+        )
+
+    if request.method == "DELETE":
+        try:
+            with transaction.atomic():
+                asset_urls = list(submission_obj.assets.values_list("asset_url", flat=True))
+                submission_obj.delete()
+        except DatabaseError as exc:
+            return db_error_response(exc, "delete the submission")
+
+        # Assets rows are cascade-deleted; clean up their files too.
+        for asset_url in asset_urls:
+            safe_delete_file(asset_url)
+
+        return response(
+            message="Submission deleted successfully.",
+            success=True,
+            status_code=status.HTTP_200_OK,
+        )

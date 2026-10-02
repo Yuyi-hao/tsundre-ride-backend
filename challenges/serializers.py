@@ -195,10 +195,39 @@ class CreateChallengeAssetSerializer(serializers.Serializer):
     )
     is_public = serializers.BooleanField(default=False)
 
-class UpdateChallengeAssetSerializer(serializers.Serializer):
+class UpdateChallengeAssetSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChallengeAsset
         fields = [
             "name",
+            "is_public",
+        ]
+
+class ChallengeSubmissionSerializer(serializers.ModelSerializer):
+    assets = ChallengeAssetSerializer(
+        many=True,
+        read_only=True,
+    )
+
+    class Meta:
+        model = ChallengeSubmission
+        fields = ["id", "status", "description", "slug", "is_public",
+            "is_editorial", "created_at", "modified_at", "assets"]
+        read_only_fields = [
+            "id", "slug", "is_editorial", "created_at", "modified_at", "assets",
+        ]
+
+class CreateChallengeSubmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChallengeSubmission
+        fields = [
+            "description",
+        ]
+
+class UpdateChallengeSubmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChallengeSubmission
+        fields = [
+            "description",
             "is_public",
         ]
