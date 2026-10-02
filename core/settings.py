@@ -149,6 +149,12 @@ MAILERS = {
 
 CORS_ALLOW_ALL_ORIGINS = True
 
+# The frontend identifies users with this header (see core/authentication.py),
+# so browsers must be allowed to send it cross-origin.
+from corsheaders.defaults import default_headers
+
+CORS_ALLOW_HEADERS = (*default_headers, "x-anonymous-id")
+
 # Storage
 STORAGE_ENDPOINT = os.getenv('STORAGE_ENDPOINT')
 STORAGE_ACCESS_KEY = os.getenv('STORAGE_ACCESS_KEY')
