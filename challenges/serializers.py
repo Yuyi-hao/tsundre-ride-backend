@@ -171,3 +171,34 @@ class DetailChallengeSerializer(serializers.ModelSerializer):
             return None
 
         return SubmissionSerializer(submission).data
+
+# assets 
+class ChallengeAssetSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChallengeAsset
+        fields = ["id", "name", "path", "file_type", "asset_url", "asset_type", "is_public", 
+                  "slug", "created_at", "modified_at",
+        ]
+        read_only_fields = [
+            "id",
+            "asset_url",
+            "created_at",
+            "modified_at",
+        ]
+
+
+class CreateChallengeAssetSerializer(serializers.Serializer):
+    file = serializers.FileField()
+    path = serializers.CharField(max_length=1024)
+    file_type = serializers.ChoiceField(
+        choices=ChallengeAsset.FileType.choices
+    )
+    is_public = serializers.BooleanField(default=False)
+
+class UpdateChallengeAssetSerializer(serializers.Serializer):
+    class Meta:
+        model = ChallengeAsset
+        fields = [
+            "name",
+            "is_public",
+        ]
