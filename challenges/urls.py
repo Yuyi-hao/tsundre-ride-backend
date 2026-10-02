@@ -4,7 +4,7 @@ from .views import *
 
 urlpatterns = [
     # public Api
-    path("", challenge, name="challenge-list"),
-    path("<uuid:challenge_slug>/", particular_challenge, name="particular-challenge"),
+    path("", views.challenges, name="challenge-list"),
+    path("<uuid:challenge_slug>/", views.particular_challenge, name="particular-challenge"),
 
 ]

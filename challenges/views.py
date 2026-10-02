@@ -11,7 +11,7 @@ from . import serializers
 # Create your views here.
 
 @api_view(['GET', 'POST'])
-def challenge(request):
+def challenges(request):
     if request.method == "GET":
         challenge_objs = Challenge.objects.all()
 
