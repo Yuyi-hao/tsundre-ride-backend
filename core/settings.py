@@ -11,6 +11,10 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -37,9 +41,17 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # Third party
+    "rest_framework",
+    "corsheaders",
+
+    # Local
+    "challenges",
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -71,11 +83,20 @@ WSGI_APPLICATION = 'core.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
+DATABASE_NAME = os.getenv('DATABASE_NAME')
+DATABASE_USER = os.getenv('DATABASE_USER')
+DATABASE_PASSWORD = os.getenv('DATABASE_PASSWORD')
+DATABASE_HOSTNAME = os.getenv('DATABASE_HOSTNAME')
+DATABASE_PORT = os.getenv('DATABASE_PORT')
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        "NAME": DATABASE_NAME,
+        "USER": DATABASE_USER,
+        "PASSWORD": DATABASE_PASSWORD,
+        "HOST": DATABASE_HOSTNAME,
+        "PORT": DATABASE_PORT,
     }
 }
 
@@ -125,3 +146,13 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+CORS_ALLOW_ALL_ORIGINS = True
+
+# Storage
+STORAGE_ENDPOINT = os.getenv('STORAGE_ENDPOINT')
+STORAGE_ACCESS_KEY = os.getenv('STORAGE_ACCESS_KEY')
+STORAGE_SECRET_KEY = os.getenv('STORAGE_SECRET_KEY')
+STORAGE_BUCKET = os.getenv('STORAGE_BUCKET')
+STORAGE_REGION = os.getenv('STORAGE_REGION')
+STORAGE_USE_SSL = os.getenv('STORAGE_USE_SSL')
