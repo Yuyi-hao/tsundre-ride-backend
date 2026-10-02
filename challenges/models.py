@@ -40,7 +40,7 @@ class ChallengeSubmission(models.Model):
     owner_id = models.UUIDField(db_index=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     description = models.TextField(blank=True)
-    slug = models.SlugField(max_length=255)
+    slug = models.SlugField(max_length=220, unique=True, editable=False, blank=False, null=False)
     is_editorial = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -50,6 +50,12 @@ class ChallengeSubmission(models.Model):
         db_table = "challenge_submission"
         verbose_name = "Challenge submission"
         verbose_name_plural = "Challenge submissions"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = str(uuid.uuid4())
+
+        super().save(*args, **kwargs)
 
 class ChallengeAsset(models.Model):
     class FileType(models.TextChoices):
@@ -61,6 +67,7 @@ class ChallengeAsset(models.Model):
         SOLUTION = "solution", "Solution Code File"
 
     name = models.CharField(max_length=255)
+    path = models.CharField(max_length=1024)
 
     file_type = models.CharField(max_length=20, choices=FileType.choices)
     asset_url = models.CharField(max_length=500)
@@ -69,7 +76,7 @@ class ChallengeAsset(models.Model):
     asset_type = models.CharField( max_length=20, choices=AssetType.choices)
     is_public = models.BooleanField(default=False)
     owner_id = models.UUIDField(db_index=True)
-    slug = models.SlugField(max_length=255)
+    slug = models.SlugField(max_length=220, unique=True, editable=False, blank=False, null=False)
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     modified_at = models.DateTimeField(auto_now=True, db_index=True)
@@ -78,3 +85,15 @@ class ChallengeAsset(models.Model):
         db_table = "challenge_asset"
         verbose_name = "Challenge asset"
         verbose_name_plural = "Challenge assets"
+        constraints = [
+            models.CheckConstraint(
+                condition=(models.Q(challenge_isnull=False)^models.Q(challenge_isnull=False)),
+                name="asset_has_exactly_one_owner"
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = str(uuid.uuid4())
+
+        super().save(*args, **kwargs)
