@@ -165,4 +165,27 @@ STORAGE_USE_SSL = os.getenv('STORAGE_USE_SSL')
 
 REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+    "DEFAULT_THROTTLE_CLASSES": [
+        "core.throttling.AnonymousIDThrottle",
+        "core.throttling.IPThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anonymous": "200/minute",
+        "ip": "1000/minute",
+    },
+}
+
+# Cache
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": (
+            f"redis://{os.getenv('REDIS_HOST')}:"
+            f"{os.getenv('REDIS_PORT')}/"
+            f"{os.getenv('REDIS_DB', '1')}"
+        ),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+    },
 }
