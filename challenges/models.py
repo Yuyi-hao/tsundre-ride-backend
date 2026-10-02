@@ -42,6 +42,7 @@ class ChallengeSubmission(models.Model):
     description = models.TextField(blank=True)
     slug = models.SlugField(max_length=220, unique=True, editable=False, blank=False, null=False)
     is_editorial = models.BooleanField(default=False)
+    is_public = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     modified_at = models.DateTimeField(auto_now=True, db_index=True)
@@ -67,7 +68,7 @@ class ChallengeAsset(models.Model):
         SOLUTION = "solution", "Solution Code File"
 
     name = models.CharField(max_length=255)
-    path = models.CharField(max_length=1024)
+    path = models.CharField(max_length=1024, default=".")
 
     file_type = models.CharField(max_length=20, choices=FileType.choices)
     asset_url = models.CharField(max_length=500)
@@ -87,7 +88,7 @@ class ChallengeAsset(models.Model):
         verbose_name_plural = "Challenge assets"
         constraints = [
             models.CheckConstraint(
-                condition=(models.Q(challenge_isnull=False)^models.Q(challenge_isnull=False)),
+                condition=(models.Q(challenge__isnull=False)^models.Q(submission__isnull=False)),
                 name="asset_has_exactly_one_owner"
             )
         ]
