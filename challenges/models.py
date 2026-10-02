@@ -1,4 +1,5 @@
 from django.db import models
+import uuid
 
 class Challenge(models.Model):
     class Status(models.TextChoices):
@@ -9,7 +10,7 @@ class Challenge(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     duration = models.PositiveIntegerField()  # seconds
-    slug = models.SlugField(max_length=220, unique=True)
+    slug = models.SlugField(max_length=220, unique=True, editable=False, blank=False, null=False)
     is_public_solution = models.BooleanField(default=False)
 
     owner_id = models.UUIDField(db_index=True,)
@@ -23,6 +24,12 @@ class Challenge(models.Model):
         db_table = "challenge"
         verbose_name = "Challenge"
         verbose_name_plural = "Challenges"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = str(uuid.uuid4())
+
+        super().save(*args, **kwargs)
 
 class ChallengeSubmission(models.Model):
     class Status(models.TextChoices):
