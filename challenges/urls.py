@@ -14,4 +14,6 @@ urlpatterns = [
     # submission
     path("<uuid:challenge_slug>/submissions/", views.challenge_submissions, name="challenge-submissions"),
     path("<uuid:challenge_slug>/submissions/<slug:submission_slug>/", views.challenge_submission_detail, name="challenge-submission-detail"),
+    path("<uuid:challenge_slug>/submissions/<slug:submission_slug>/assets/", views.submission_assets, name="submission-assets"),
+    path("<uuid:challenge_slug>/submissions/<slug:submission_slug>/assets/<slug:asset_slug>/", views.submission_asset_detail, name="submission-asset-detail"),
 ]

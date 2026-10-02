@@ -13,6 +13,7 @@ from core.utils import (
 from core.authentication import get_anonymous_id
 from rest_framework.decorators import api_view
 from rest_framework import status
+from django.db.models import Case, When, Value, IntegerField
 
 from .models import Challenge, ChallengeAsset, ChallengeSubmission
 from . import serializers
@@ -436,13 +437,26 @@ def challenge_submissions(request, challenge_slug):
     if request.method == "GET":
 
         if is_challenge_owner:
-            submissions = challenge_obj.submissions.all()
-
+            submissions = challenge_obj.submissions.filter(
+                Q(status=ChallengeSubmission.Status.SUBMITTED) |
+                Q(owner_id=owner_id)
+            )
         else:
             submissions = challenge_obj.submissions.filter(
                 Q(owner_id=owner_id) |
-                Q(is_public=True)
+                Q(
+                    is_public=True,
+                    status=ChallengeSubmission.Status.SUBMITTED,
+                )
             )
+
+        submissions = submissions.annotate(
+            is_mine=Case(
+                When(owner_id=owner_id, then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
+        ).order_by("is_mine", "-is_editorial", "-created_at")
 
         submissions = submissions.order_by("-created_at")
 
@@ -575,6 +589,18 @@ def challenge_submission_detail(request, challenge_slug, submission_slug):
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
+        is_submitting = (
+            serializer.validated_data.get("status") == ChallengeSubmission.Status.SUBMITTED
+            and submission_obj.status != ChallengeSubmission.Status.SUBMITTED
+        )
+        if is_submitting and challenge_obj.status != Challenge.Status.ACTIVE:
+            return response(
+                message="This challenge is no longer accepting submissions.",
+                success=False,
+                code='challenge-closed',
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             submission_obj = serializer.save()
         except DatabaseError as exc:
@@ -606,3 +632,185 @@ def challenge_submission_detail(request, challenge_slug, submission_slug):
             success=True,
             status_code=status.HTTP_200_OK,
         )
+
+def get_challenge_and_submission(challenge_slug, submission_slug):
+    """
+        Returns (challenge, submission, None), or (None, None, error_response)
+        when either one doesn't exist.
+    """
+    try:
+        challenge_obj = Challenge.objects.get(slug=challenge_slug)
+    except Challenge.DoesNotExist:
+        return None, None, response(
+            message="Challenge not found.",
+            success=False,
+            code='not-found',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    try:
+        submission_obj = challenge_obj.submissions.get(slug=submission_slug)
+    except ChallengeSubmission.DoesNotExist:
+        return None, None, response(
+            message="Submission not found.",
+            success=False,
+            code='not-found',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    return challenge_obj, submission_obj, None
+
+
+def check_can_edit_submission_files(submission_obj, owner_id):
+    """
+        Only the submission owner can change its files, and only while it is a draft.
+        Returns an error response, or None when allowed.
+    """
+    if submission_obj.owner_id != owner_id:
+        return response(
+            message="You are not the owner of this submission.",
+            success=False,
+            code='forbidden',
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+    if submission_obj.status != ChallengeSubmission.Status.DRAFT:
+        return response(
+            message="Unsubmit this submission before changing its files.",
+            success=False,
+            code='not-draft',
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    return None
+
+
+@api_view(["GET", "POST"])
+def submission_assets(request, challenge_slug, submission_slug):
+    challenge_obj, submission_obj, error = get_challenge_and_submission(challenge_slug, submission_slug)
+    if error:
+        return error
+
+    owner_id = get_anonymous_id(request)
+
+    if request.method == "GET":
+        can_view = (
+            challenge_obj.owner_id == owner_id
+            or submission_obj.owner_id == owner_id
+            or submission_obj.is_public
+        )
+        if not can_view:
+            return response(
+                message="You do not have permission to view this submission.",
+                success=False,
+                code='forbidden',
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
+        assets = submission_obj.assets.order_by("path")
+        return response(
+            message="Submission files fetched successfully.",
+            content={
+                "assets": serializers.ChallengeAssetSerializer(assets, many=True).data
+            },
+            success=True,
+            status_code=status.HTTP_200_OK,
+        )
+
+    if request.method == "POST":
+        error = check_can_edit_submission_files(submission_obj, owner_id)
+        if error:
+            return error
+
+        serializer = serializers.CreateSubmissionAssetSerializer(data=request.data)
+        if not serializer.is_valid():
+            return response(
+                message="Invalid file data.",
+                error=serializer.errors,
+                success=False,
+                code='invalid-data',
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        file = serializer.validated_data["file"]
+        path = serializer.validated_data["path"].replace("\\", "/")
+
+        if not validate_asset_path(path):
+            return response(
+                message="Invalid file path.",
+                success=False,
+                code='invalid-data',
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if submission_obj.assets.filter(path=path).exists():
+            return response(
+                message="A file already exists at this path.",
+                success=False,
+                code='conflict',
+                status_code=status.HTTP_409_CONFLICT,
+            )
+
+        storage_path = f"submissions/{submission_obj.id}/{path}"
+
+        try:
+            asset_url = upload_a_file(
+                file=file,
+                bucket="challenge-files",
+                path=storage_path,
+                content_type=file.content_type,
+            )
+        except STORAGE_ERRORS as exc:
+            return storage_error_response(exc, "upload the file")
+
+        try:
+            asset_obj = ChallengeAsset.objects.create(
+                name=PurePosixPath(path).name,
+                path=path,
+                file_type=serializer.validated_data["file_type"],
+                asset_url=asset_url,
+                submission=submission_obj,
+                asset_type=ChallengeAsset.AssetType.SOLUTION,
+                owner_id=owner_id,
+            )
+        except DatabaseError as exc:
+            safe_delete_file(asset_url)
+            return db_error_response(exc, "save the file")
+
+        return response(
+            message="Submission file uploaded successfully.",
+            content=serializers.ChallengeAssetSerializer(asset_obj).data,
+            success=True,
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
+@api_view(["DELETE"])
+def submission_asset_detail(request, challenge_slug, submission_slug, asset_slug):
+    _, submission_obj, error = get_challenge_and_submission(challenge_slug, submission_slug)
+    if error:
+        return error
+
+    try:
+        asset_obj = submission_obj.assets.get(slug=asset_slug)
+    except ChallengeAsset.DoesNotExist:
+        return response(
+            message="File not found.",
+            success=False,
+            code='not-found',
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    error = check_can_edit_submission_files(submission_obj, get_anonymous_id(request))
+    if error:
+        return error
+
+    asset_url = asset_obj.asset_url
+    try:
+        asset_obj.delete()
+    except DatabaseError as exc:
+        return db_error_response(exc, "delete the file")
+
+    safe_delete_file(asset_url)
+
+    return response(
+        message="Submission file deleted successfully.",
+        success=True,
+        status_code=status.HTTP_200_OK,
+    )

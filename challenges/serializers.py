@@ -1,15 +1,35 @@
+import logging
+
 from rest_framework import serializers
+
+from core.storage.utils import get_presigned_url
+from core.utils import STORAGE_ERRORS
 
 from .models import Challenge, ChallengeAsset, ChallengeSubmission
 
+logger = logging.getLogger(__name__)
+
+# Seconds a download URL stays valid. Pages fetch files right after loading, so this can be short.
+ASSET_DOWNLOAD_URL_EXPIRY = 60 * 60
+
 
 class ChallengeAssetSerializer(serializers.ModelSerializer):
+    # The bucket is private, so clients download through a short-lived signed URL
+    download_url = serializers.SerializerMethodField()
+
     class Meta:
         model = ChallengeAsset
-        fields = ["id", "name", "file_type", "asset_url", "asset_type", "is_public",
-            "slug", "created_at", "modified_at",
+        fields = ["id", "name", "path", "file_type", "asset_url", "download_url", "asset_type",
+                  "is_public", "slug", "created_at", "modified_at",
         ]
-        read_only_fields = ["id", "created_at", "modified_at",]
+        read_only_fields = ["id", "asset_url", "created_at", "modified_at",]
+
+    def get_download_url(self, obj):
+        try:
+            return get_presigned_url(obj.asset_url, expires_in=ASSET_DOWNLOAD_URL_EXPIRY)
+        except (*STORAGE_ERRORS, ValueError):
+            logger.exception("Could not sign download URL for asset %s.", obj.pk)
+            return None
 
 
 class SubmissionSerializer(serializers.ModelSerializer):
@@ -58,22 +78,6 @@ class ChallengeDetailSerializer(serializers.ModelSerializer):
             return None
 
         return SubmissionSerializer(submission).data
-
-
-class ChallengeAssetSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChallengeAsset
-        fields = [
-            "id",
-            "name",
-            "file_type",
-            "asset_url",
-            "asset_type",
-            "is_public",
-            "slug",
-            "created_at",
-            "modified_at",
-        ]
 
 
 class SubmissionSerializer(serializers.ModelSerializer):
@@ -173,22 +177,9 @@ class DetailChallengeSerializer(serializers.ModelSerializer):
         return SubmissionSerializer(submission).data
 
 # assets 
-class ChallengeAssetSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ChallengeAsset
-        fields = ["id", "name", "path", "file_type", "asset_url", "asset_type", "is_public", 
-                  "slug", "created_at", "modified_at",
-        ]
-        read_only_fields = [
-            "id",
-            "asset_url",
-            "created_at",
-            "modified_at",
-        ]
-
-
 class CreateChallengeAssetSerializer(serializers.Serializer):
-    file = serializers.FileField()
+    # Starter files created in the editor are often still empty
+    file = serializers.FileField(allow_empty_file=True)
     path = serializers.CharField(max_length=1024)
     file_type = serializers.ChoiceField(
         choices=ChallengeAsset.FileType.choices
@@ -230,4 +221,14 @@ class UpdateChallengeSubmissionSerializer(serializers.ModelSerializer):
         fields = [
             "description",
             "is_public",
+            # draft <-> submitted
+            "status",
         ]
+
+class CreateSubmissionAssetSerializer(serializers.Serializer):
+    # Files created in the editor are often still empty
+    file = serializers.FileField(allow_empty_file=True)
+    path = serializers.CharField(max_length=1024)
+    file_type = serializers.ChoiceField(
+        choices=ChallengeAsset.FileType.choices
+    )
