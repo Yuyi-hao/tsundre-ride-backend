@@ -156,3 +156,7 @@ STORAGE_SECRET_KEY = os.getenv('STORAGE_SECRET_KEY')
 STORAGE_BUCKET = os.getenv('STORAGE_BUCKET')
 STORAGE_REGION = os.getenv('STORAGE_REGION')
 STORAGE_USE_SSL = os.getenv('STORAGE_USE_SSL')
+
+REST_FRAMEWORK = {
+    "EXCEPTION_HANDLER": "core.exceptions.custom_exception_handler",
+}
